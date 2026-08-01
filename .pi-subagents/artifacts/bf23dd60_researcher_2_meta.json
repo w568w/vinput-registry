@@ -1,0 +1,89 @@
+{
+  "runId": "bf23dd60",
+  "agent": "researcher",
+  "task": "Research ModelScope/Gitee/Chinese ecosystem for recent ASR models with existing sherpa-onnx export/downloads outside official k2-fsa asr-models release. Search Chinese queries. Need direct-ready compatibility evidence and package size. Separate `supports ONNXRuntime` from `supports sherpa-onnx C++ API`; flag models requiring new backend code. Recommend whether vinput-registry can add registry-only.\n\n---\nUpdate progress at: /home/xifan/code/vinput-registry/.pi-subagents/artifacts/progress/bf23dd60/progress.md\n\n---\n**Output:**\nWrite your findings to exactly this path: /home/xifan/code/vinput-registry/.pi-subagents/artifacts/outputs/bf23dd60/.pi-subagents/research/china-ecosystem.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.",
+  "exitCode": 1,
+  "usage": {
+    "input": 13821,
+    "output": 912,
+    "cacheRead": 7168,
+    "cacheWrite": 0,
+    "cost": 0.100049,
+    "turns": 4
+  },
+  "model": "openai-codex/gpt-5.6-sol:medium",
+  "attemptedModels": [
+    "openai-codex/gpt-5.6-sol:medium"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.6-sol:medium",
+      "success": false,
+      "exitCode": 1,
+      "error": "Subagent timed out after 300000ms.",
+      "usage": {
+        "input": 13821,
+        "output": 912,
+        "cacheRead": 7168,
+        "cacheWrite": 0,
+        "cost": 0.100049,
+        "turns": 4
+      }
+    }
+  ],
+  "durationMs": 300207,
+  "toolCount": 13,
+  "error": "Subagent timed out after 300000ms.",
+  "acceptance": {
+    "status": "rejected",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [
+      {
+        "id": "timeout",
+        "status": "failed",
+        "message": "Acceptance was not evaluated because the subagent timed out."
+      }
+    ],
+    "verifyRuns": []
+  },
+  "transcriptPath": "/home/xifan/code/vinput-registry/.pi-subagents/artifacts/bf23dd60_researcher_2_transcript.jsonl",
+  "timestamp": 1784542604780
+}

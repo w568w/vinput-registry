@@ -1,0 +1,89 @@
+{
+  "runId": "bf23dd60",
+  "agent": "researcher",
+  "task": "Search Hugging Face and GitHub for `sherpa-onnx` compatible ASR model repos not included in k2-fsa/sherpa-onnx `asr-models` release. Focus on modern Chinese/Chinese-English: FunASR/SenseVoice, Paraformer, WeNet/U2++, Zipformer, X-ASR, FireRedASR2, Qwen3-ASR, Dolphin and community conversions. Verify files and architecture, not just README mentions. Identify any genuinely newer/better external-only model and practical blockers.\n\n---\nUpdate progress at: /home/xifan/code/vinput-registry/.pi-subagents/artifacts/progress/bf23dd60/progress.md\n\n---\n**Output:**\nWrite your findings to exactly this path: /home/xifan/code/vinput-registry/.pi-subagents/artifacts/outputs/bf23dd60/.pi-subagents/research/hf-github.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.",
+  "exitCode": 1,
+  "usage": {
+    "input": 14232,
+    "output": 900,
+    "cacheRead": 8192,
+    "cacheWrite": 0,
+    "cost": 0.10225600000000001,
+    "turns": 3
+  },
+  "model": "openai-codex/gpt-5.6-sol:medium",
+  "attemptedModels": [
+    "openai-codex/gpt-5.6-sol:medium"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.6-sol:medium",
+      "success": false,
+      "exitCode": 1,
+      "error": "Subagent timed out after 300000ms.",
+      "usage": {
+        "input": 14232,
+        "output": 900,
+        "cacheRead": 8192,
+        "cacheWrite": 0,
+        "cost": 0.10225600000000001,
+        "turns": 3
+      }
+    }
+  ],
+  "durationMs": 300117,
+  "toolCount": 15,
+  "error": "Subagent timed out after 300000ms.",
+  "acceptance": {
+    "status": "rejected",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [
+      {
+        "id": "timeout",
+        "status": "failed",
+        "message": "Acceptance was not evaluated because the subagent timed out."
+      }
+    ],
+    "verifyRuns": []
+  },
+  "transcriptPath": "/home/xifan/code/vinput-registry/.pi-subagents/artifacts/bf23dd60_researcher_1_transcript.jsonl",
+  "timestamp": 1784542604683
+}

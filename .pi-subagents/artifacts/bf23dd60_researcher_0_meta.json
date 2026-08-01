@@ -1,0 +1,89 @@
+{
+  "runId": "bf23dd60",
+  "agent": "researcher",
+  "task": "Research NEW or community ASR models outside k2-fsa/sherpa-onnx GitHub release tag `asr-models` that are already directly compatible with sherpa-onnx (actual ONNX artifacts/configs, not merely theoretically convertible). Focus Chinese or Chinese-English, China-published, recent 2025-2026, CPU/general, preferably <=200MB. Search GitHub, Hugging Face, ModelScope. For each candidate give exact URL, artifact layout/architecture, size, date, punctuation/hotword/streaming capability, and confidence it loads in sherpa-onnx. Explicitly distinguish already mirrored into upstream asr-models from truly external-only. Return concise findings and top recommendations.\n\n---\nUpdate progress at: /home/xifan/code/vinput-registry/.pi-subagents/artifacts/progress/bf23dd60/progress.md\n\n---\n**Output:**\nWrite your findings to exactly this path: /home/xifan/code/vinput-registry/.pi-subagents/artifacts/outputs/bf23dd60/.pi-subagents/research/external-ready.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.",
+  "exitCode": 1,
+  "usage": {
+    "input": 16737,
+    "output": 1210,
+    "cacheRead": 8192,
+    "cacheWrite": 0,
+    "cost": 0.124081,
+    "turns": 3
+  },
+  "model": "openai-codex/gpt-5.6-sol:medium",
+  "attemptedModels": [
+    "openai-codex/gpt-5.6-sol:medium"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.6-sol:medium",
+      "success": false,
+      "exitCode": 1,
+      "error": "Subagent timed out after 300000ms.",
+      "usage": {
+        "input": 16737,
+        "output": 1210,
+        "cacheRead": 8192,
+        "cacheWrite": 0,
+        "cost": 0.124081,
+        "turns": 3
+      }
+    }
+  ],
+  "durationMs": 300142,
+  "toolCount": 18,
+  "error": "Subagent timed out after 300000ms.",
+  "acceptance": {
+    "status": "rejected",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [
+      {
+        "id": "timeout",
+        "status": "failed",
+        "message": "Acceptance was not evaluated because the subagent timed out."
+      }
+    ],
+    "verifyRuns": []
+  },
+  "transcriptPath": "/home/xifan/code/vinput-registry/.pi-subagents/artifacts/bf23dd60_researcher_0_transcript.jsonl",
+  "timestamp": 1784542604686
+}
