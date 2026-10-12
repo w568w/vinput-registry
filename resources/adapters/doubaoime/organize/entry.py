@@ -9,17 +9,18 @@ import http.server
 import json
 import os
 import secrets
-import socket
 import select
+import socket
 import tempfile
 import threading
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
-import urllib.error
 import uuid
 from pathlib import Path
+from typing import cast
 
 MODEL = "doubaoime-organize"
 SCENE_PROMPT = "<vinput-asr>\n{{asr}}\n</vinput-asr>"
@@ -68,7 +69,7 @@ def _expand_key(key):
         raise ValueError("AES key must be 16, 24, or 32 bytes")
     nk = len(key) // 4
     rounds = nk + 6
-    words = [list(key[index:index + 4]) for index in range(0, len(key), 4)]
+    words = [list(key[index : index + 4]) for index in range(0, len(key), 4)]
     rcon = 1
     while len(words) < 4 * (rounds + 1):
         word = words[-1][:]
@@ -80,7 +81,7 @@ def _expand_key(key):
             word = [_sbox(item) for item in word]
         word = [word[index] ^ words[-nk][index] for index in range(4)]
         words.append(word)
-    return [sum(words[index:index + 4], []) for index in range(0, len(words), 4)]
+    return [[byte for word in words[index : index + 4] for byte in word] for index in range(0, len(words), 4)]
 
 
 def _aes_block(block, key):
@@ -105,7 +106,7 @@ def _aes_block(block, key):
     def mix_columns():
         for column in range(4):
             offset = column * 4
-            a = state[offset:offset + 4]
+            a = state[offset : offset + 4]
             state[offset] = _gf_mul(a[0], 2) ^ _gf_mul(a[1], 3) ^ a[2] ^ a[3]
             state[offset + 1] = a[0] ^ _gf_mul(a[1], 2) ^ _gf_mul(a[2], 3) ^ a[3]
             state[offset + 2] = a[0] ^ a[1] ^ _gf_mul(a[2], 2) ^ _gf_mul(a[3], 3)
@@ -129,7 +130,7 @@ def _aes_cbc_encrypt(data, key, iv):
     result = bytearray()
     previous = iv
     for offset in range(0, len(data), 16):
-        block = bytes(left ^ right for left, right in zip(data[offset:offset + 16], previous))
+        block = bytes(left ^ right for left, right in zip(data[offset : offset + 16], previous, strict=True))
         previous = _aes_block(block, key)
         result.extend(previous)
     return bytes(result)
@@ -153,7 +154,10 @@ def _chacha20_xor(data, key, nonce, counter=0):
         state[b] = rotate(state[b] ^ state[c], 7)
 
     constants = b"expand 32-byte k"
-    words = lambda raw: [int.from_bytes(raw[index:index + 4], "little") for index in range(0, len(raw), 4)]
+
+    def words(raw):
+        return [int.from_bytes(raw[index : index + 4], "little") for index in range(0, len(raw), 4)]
+
     base = words(constants) + words(key) + [counter] + words(nonce)
     result = bytearray()
     for offset in range(0, len(data), 64):
@@ -168,7 +172,7 @@ def _chacha20_xor(data, key, nonce, counter=0):
             quarter(state, 2, 7, 8, 13)
             quarter(state, 3, 4, 9, 14)
         stream = b"".join(((state[index] + base[index]) & 0xFFFFFFFF).to_bytes(4, "little") for index in range(16))
-        result.extend(left ^ right for left, right in zip(data[offset:offset + 64], stream))
+        result.extend(left ^ right for left, right in zip(data[offset : offset + 64], stream, strict=False))
         base[12] = (base[12] + 1) & 0xFFFFFFFF
     return bytes(result)
 
@@ -177,7 +181,9 @@ def encode_tt_encrypt(gzip_bytes, salt=None):
     salt = secrets.token_bytes(32) if salt is None else salt
     if len(salt) != 32:
         raise ValueError("ttEncrypt salt must contain exactly 32 bytes")
-    constant = bytes.fromhex("4dd4c2e6b83162090e52b3c7a6733ba41cb2462b829ab58a196b39db57177524f49baf7f08e8d68d26a72e37c1a95a2f1f05a51892aef2949732b62a38aadd58")
+    constant = bytes.fromhex(
+        "4dd4c2e6b83162090e52b3c7a6733ba41cb2462b829ab58a196b39db57177524f49baf7f08e8d68d26a72e37c1a95a2f1f05a51892aef2949732b62a38aadd58"
+    )
     digest = hashlib.sha512(hashlib.sha512(salt).digest() + constant).digest()
     key, iv = digest[:16], digest[16:32]
     payload = hashlib.sha512(gzip_bytes).digest() + gzip_bytes
@@ -194,14 +200,56 @@ def _json_request(url, params, headers, body, timeout):
 
 
 def _new_installation():
-    return {"openudid": secrets.token_hex(10), "clientudid": str(uuid.uuid4()), "cdid": str(uuid.uuid4()), "first_install_time": int(time.time() * 1000)}
+    return {
+        "openudid": secrets.token_hex(10),
+        "clientudid": str(uuid.uuid4()),
+        "cdid": str(uuid.uuid4()),
+        "first_install_time": int(time.time() * 1000),
+    }
 
 
 def _register(state):
     request_id = str(uuid.uuid4())
-    header = {"aid": 401734, "app_name": "oime", "channel": "official", "package": "com.bytedance.android.doubaoime", "app_version": "1.5.1", "version_code": 100501006, "update_version_code": 100501006, "manifest_version_code": 100501006, "not_request_sender": 1, "device_platform": "android", "os": "Android", "os_version": "14", "os_api": 34, "device_model": "Python protocol test", "device_brand": "generic", "device_manufacturer": "generic", "cpu_abi": "arm64-v8a", "language": "zh", "timezone": 8, "tz_name": "Asia/Shanghai", "tz_offset": 28800, "access": "wifi", "openudid": state["openudid"], "clientudid": state["clientudid"], "cdid": state["cdid"], "req_id": request_id, "apk_first_install_time": state["first_install_time"], "is_system_app": 0}
-    body = json.dumps({"magic_tag": "ss_app_log", "_gen_time": int(time.time() * 1000), "header": header}, separators=(",", ":")).encode()
-    raw = _json_request(REGISTER_URL, {"req_id": request_id, "tt_data": "a"}, {"Content-Type": "application/octet-stream;tt-data=a"}, encode_tt_encrypt(gzip.compress(body, mtime=0)), 20)
+    header = {
+        "aid": 401734,
+        "app_name": "oime",
+        "channel": "official",
+        "package": "com.bytedance.android.doubaoime",
+        "app_version": "1.5.1",
+        "version_code": 100501006,
+        "update_version_code": 100501006,
+        "manifest_version_code": 100501006,
+        "not_request_sender": 1,
+        "device_platform": "android",
+        "os": "Android",
+        "os_version": "14",
+        "os_api": 34,
+        "device_model": "Python protocol test",
+        "device_brand": "generic",
+        "device_manufacturer": "generic",
+        "cpu_abi": "arm64-v8a",
+        "language": "zh",
+        "timezone": 8,
+        "tz_name": "Asia/Shanghai",
+        "tz_offset": 28800,
+        "access": "wifi",
+        "openudid": state["openudid"],
+        "clientudid": state["clientudid"],
+        "cdid": state["cdid"],
+        "req_id": request_id,
+        "apk_first_install_time": state["first_install_time"],
+        "is_system_app": 0,
+    }
+    body = json.dumps(
+        {"magic_tag": "ss_app_log", "_gen_time": int(time.time() * 1000), "header": header}, separators=(",", ":")
+    ).encode()
+    raw = _json_request(
+        REGISTER_URL,
+        {"req_id": request_id, "tt_data": "a"},
+        {"Content-Type": "application/octet-stream;tt-data=a"},
+        encode_tt_encrypt(gzip.compress(body, mtime=0)),
+        20,
+    )
     device_id = raw.get("device_id_str") or str(raw.get("device_id") or "")
     install_id = raw.get("install_id_str") or str(raw.get("install_id") or "")
     if not device_id or not install_id or device_id == "0" or install_id == "0":
@@ -232,6 +280,7 @@ def _ensure_identity(path):
     with lock_path.open("a") as lock:
         os.chmod(lock_path, 0o600)
         import fcntl
+
         deadline = time.monotonic() + 30
         while True:
             try:
@@ -239,8 +288,8 @@ def _ensure_identity(path):
                 break
             except BlockingIOError:
                 if time.monotonic() >= deadline:
-                    raise TimeoutError("Identity lock deadline expired")
-                time.sleep(.05)
+                    raise TimeoutError("Identity lock deadline expired") from None
+                time.sleep(0.05)
         state = json.loads(path.read_text()) if path.exists() else _new_installation()
         if not isinstance(state, dict):
             raise ValueError("Identity cache must be a JSON object")
@@ -280,7 +329,7 @@ def _extract_text(body):
     prefix = "<vinput-asr>\n"
     if not isinstance(content, str) or not content.startswith(prefix):
         raise ValueError("Expected the vinput text wrapper")
-    text, marker, suffix = content[len(prefix):].rpartition("\n</vinput-asr>")
+    text, marker, suffix = content[len(prefix) :].rpartition("\n</vinput-asr>")
     if not marker or not suffix.startswith("\n\n## Constraints\n") or not text.strip():
         raise ValueError("Missing vinput text wrapper")
     return text
@@ -339,8 +388,7 @@ class CryptoCache:
             work.check()
             if self.value is not None and time.monotonic() < self.expires:
                 return self.value
-            query = {**params, "abi": "arm64-v8a", "tnc_src": "4",
-                     "okhttp_version": "4.2.243.10-wave"}
+            query = {**params, "abi": "arm64-v8a", "tnc_src": "4", "okhttp_version": "4.2.243.10-wave"}
             request = urllib.request.Request(TNC_URL + "?" + urllib.parse.urlencode(query))
             try:
                 with work.open(request, work.check()) as response:
@@ -425,28 +473,50 @@ def _sse_lines(response, key, work, first_deadline):
 
 
 def _organize(text, state, cache, work):
-    params = {"aid": "401734", "app_name": "oime", "channel": "official",
-              "version_name": "1.5.1", "version_code": "100501006",
-              "update_version_code": "100501006", "manifest_version_code": "100501006",
-              "device_platform": "android", "os": "android", "os_api": "34",
-              "os_version": "14", "device_type": "Python protocol test",
-              "device_brand": "generic", "language": "zh", "ssmix": "a",
-              "_rticket": str(int(time.time() * 1000)), "device_id": state["device_id"],
-              "iid": state["install_id"], "cdid": state.get("cdid", ""),
-              "use-olympus-account": "1"}
+    params = {
+        "aid": "401734",
+        "app_name": "oime",
+        "channel": "official",
+        "version_name": "1.5.1",
+        "version_code": "100501006",
+        "update_version_code": "100501006",
+        "manifest_version_code": "100501006",
+        "device_platform": "android",
+        "os": "android",
+        "os_api": "34",
+        "os_version": "14",
+        "device_type": "Python protocol test",
+        "device_brand": "generic",
+        "language": "zh",
+        "ssmix": "a",
+        "_rticket": str(int(time.time() * 1000)),
+        "device_id": state["device_id"],
+        "iid": state["install_id"],
+        "cdid": state.get("cdid", ""),
+        "use-olympus-account": "1",
+    }
     try:
         ticket, key = cache.get(params, work)
-        body = json.dumps({"scene": 6, "query": text, "space_at_cn_en_nb": 1,
-                           "space_at_newline": 1, "stream": True},
-                          ensure_ascii=False, separators=(",", ":")).encode()
+        body = json.dumps(
+            {"scene": 6, "query": text, "space_at_cn_en_nb": 1, "space_at_newline": 1, "stream": True},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode()
         nonce = secrets.token_bytes(12)
         wire = _chacha20_xor(body, key, nonce)
-        headers = {"Accept": "text/event-stream", "Content-Type": "application/json",
-                   "sdk-version": "2", "passport-sdk-version": "605195", "x-tt-e-b": "1",
-                   "x-tt-e-t": ticket, "x-tt-e-p": base64.b64encode(nonce).decode(),
-                   "x-tt-e-h": base64.b64encode(_chacha20_xor(b"hello", key, nonce)).decode()}
-        request = urllib.request.Request(ORGANIZE_URL + "?" + urllib.parse.urlencode(params),
-                                         data=wire, headers=headers, method="POST")
+        headers = {
+            "Accept": "text/event-stream",
+            "Content-Type": "application/json",
+            "sdk-version": "2",
+            "passport-sdk-version": "605195",
+            "x-tt-e-b": "1",
+            "x-tt-e-t": ticket,
+            "x-tt-e-p": base64.b64encode(nonce).decode(),
+            "x-tt-e-h": base64.b64encode(_chacha20_xor(b"hello", key, nonce)).decode(),
+        }
+        request = urllib.request.Request(
+            ORGANIZE_URL + "?" + urllib.parse.urlencode(params), data=wire, headers=headers, method="POST"
+        )
         first_deadline = time.monotonic() + 2.0
         try:
             with work.open(request, 2.0) as response:
@@ -479,7 +549,25 @@ def _organize(text, state, cache, work):
 
 
 def _chat_response(text):
-    return {"id": "chatcmpl-" + uuid.uuid4().hex, "object": "chat.completion", "created": int(time.time()), "model": MODEL, "choices": [{"index": 0, "message": {"role": "assistant", "content": json.dumps({"candidates": [text]}, ensure_ascii=False)}, "finish_reason": "stop"}]}
+    return {
+        "id": "chatcmpl-" + uuid.uuid4().hex,
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": MODEL,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": json.dumps({"candidates": [text]}, ensure_ascii=False)},
+                "finish_reason": "stop",
+            }
+        ],
+    }
+
+
+class OrganizationServer(http.server.ThreadingHTTPServer):
+    identity: dict
+    no_trailing: bool
+    crypto: CryptoCache
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -505,17 +593,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": {"message": str(error)}}, 400)
             return
         work = RequestWork(time.monotonic() + 8.0)
+        server = cast(OrganizationServer, self.server)
         completed = threading.Event()
         output = [text]
+
         def organize():
             try:
-                output[0] = _organize(text, self.server.identity, self.server.crypto, work)
+                output[0] = _organize(text, server.identity, server.crypto, work)
             finally:
                 completed.set()
+
         worker = threading.Thread(target=organize, daemon=True)
         worker.start()
         try:
-            while not completed.wait(.05):
+            while not completed.wait(0.05):
                 if time.monotonic() >= work.deadline:
                     work.abort()
                     break
@@ -524,14 +615,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     work.abort()
                     return
             result = output[0] if completed.is_set() else text
-            if self.server.no_trailing:
+            if server.no_trailing:
                 result = _remove_trailing(result)
             self._send_json(_chat_response(result))
         except (BrokenPipeError, ConnectionResetError, OSError):
             work.abort()
         finally:
             work.abort()
-            worker.join(timeout=.2)
+            worker.join(timeout=0.2)
 
     def _send_json(self, payload, status=200):
         wire = json.dumps(payload, ensure_ascii=False).encode()
@@ -541,7 +632,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(wire)
 
-    def log_message(self, *_):
+    def log_message(self, format: str, *args: object) -> None:
         return
 
 
@@ -549,9 +640,13 @@ def main():
     parser = argparse.ArgumentParser(description="Doubao IME organization adapter")
     parser.add_argument("--identity", type=Path, default=Path(os.getenv("DOUBAOIME_IDENTITY_PATH") or DEFAULT_IDENTITY))
     parser.add_argument("--port", type=int, default=int(os.getenv("DOUBAOIME_PORT") or "18232"))
-    parser.add_argument("--no-trailing-punctuation", action="store_true", default=os.getenv("DOUBAOIME_NO_TRAILING_PUNCTUATION", "").lower() in {"1", "true", "yes"})
+    parser.add_argument(
+        "--no-trailing-punctuation",
+        action="store_true",
+        default=os.getenv("DOUBAOIME_NO_TRAILING_PUNCTUATION", "").lower() in {"1", "true", "yes"},
+    )
     args = parser.parse_args()
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    server = OrganizationServer(("127.0.0.1", args.port), Handler)
     server.identity = _ensure_identity(args.identity)
     server.no_trailing = args.no_trailing_punctuation
     server.crypto = CryptoCache()
