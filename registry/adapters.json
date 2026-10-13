@@ -13,7 +13,7 @@
       "readme_url": "https://github.com/xifan2333/vinput-registry/blob/main/resources/adapters/doubaoime/organize/README.md",
       "envs": [
         { "name": "DOUBAOIME_IDENTITY_PATH", "required": false },
-        { "name": "DOUBAOIME_PORT", "required": false },
+        { "name": "DOUBAOIME_PORT", "required": true },
         { "name": "DOUBAOIME_NO_TRAILING_PUNCTUATION", "required": false }
       ]
     },

@@ -3,6 +3,7 @@
 import argparse
 import base64
 import codecs
+import fcntl
 import gzip
 import hashlib
 import http.server
@@ -11,6 +12,7 @@ import os
 import secrets
 import select
 import socket
+import sys
 import tempfile
 import threading
 import time
@@ -21,10 +23,11 @@ import urllib.request
 import uuid
 from pathlib import Path
 from typing import cast
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 MODEL = "doubaoime-organize"
 SCENE_PROMPT = "<vinput-asr>\n{{asr}}\n</vinput-asr>"
-DEFAULT_IDENTITY = Path.home() / ".cache/vinput/doubaoime-stable/identity.json"
 REGISTER_URL = "https://log.snssdk.com/service/2/device_register/"
 TNC_URL = "https://tnc3-bjlgy.snssdk.com/get_domains/v5/"
 ORGANIZE_URL = "https://ime.doubao.com/api/v2/ai/text_organization"
@@ -192,14 +195,7 @@ def encode_tt_encrypt(gzip_bytes, salt=None):
     return bytes.fromhex("746305100000") + salt + _aes_cbc_encrypt(payload, key, iv)
 
 
-def _json_request(url, params, headers, body, timeout):
-    target = url + "?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(target, data=body, headers=headers, method="POST")
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read())
-
-
-def _new_installation():
+def new_installation() -> dict:
     return {
         "openudid": secrets.token_hex(10),
         "clientudid": str(uuid.uuid4()),
@@ -208,7 +204,7 @@ def _new_installation():
     }
 
 
-def _register(state):
+def registration_request(state: dict) -> dict:
     request_id = str(uuid.uuid4())
     header = {
         "aid": 401734,
@@ -216,10 +212,13 @@ def _register(state):
         "channel": "official",
         "package": "com.bytedance.android.doubaoime",
         "app_version": "1.5.1",
+        "app_version_minor": "6",
         "version_code": 100501006,
         "update_version_code": 100501006,
         "manifest_version_code": 100501006,
         "not_request_sender": 1,
+        "release_build": "",
+        "custom": {},
         "device_platform": "android",
         "os": "Android",
         "os_version": "14",
@@ -236,51 +235,80 @@ def _register(state):
         "openudid": state["openudid"],
         "clientudid": state["clientudid"],
         "cdid": state["cdid"],
+        "git_hash": "b416399",
+        "sdk_version_code": 4030263,
+        "sdk_target_version": 30,
+        "sdk_version": "4.3.2-rc.13",
+        "sdk_flavor": "cnInner",
+        "guest_mode": 0,
         "req_id": request_id,
         "apk_first_install_time": state["first_install_time"],
         "is_system_app": 0,
     }
-    body = json.dumps(
-        {"magic_tag": "ss_app_log", "_gen_time": int(time.time() * 1000), "header": header}, separators=(",", ":")
-    ).encode()
-    raw = _json_request(
-        REGISTER_URL,
-        {"req_id": request_id, "tt_data": "a"},
-        {"Content-Type": "application/octet-stream;tt-data=a"},
-        encode_tt_encrypt(gzip.compress(body, mtime=0)),
-        20,
-    )
-    device_id = raw.get("device_id_str") or str(raw.get("device_id") or "")
-    install_id = raw.get("install_id_str") or str(raw.get("install_id") or "")
-    if not device_id or not install_id or device_id == "0" or install_id == "0":
-        raise RuntimeError("Device registration did not return a usable identity")
-    return {"device_id": device_id, "install_id": install_id}
+    body = {"magic_tag": "ss_app_log", "_gen_time": int(time.time() * 1000), "header": header}
+    return {
+        "url": "https://log.snssdk.com/service/2/device_register/",
+        "params": {"req_id": request_id, "tt_data": "a"},
+        "headers": {"Content-Type": "application/octet-stream;tt-data=a"},
+        "body": body,
+    }
 
 
-def _save_identity(path, state):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
+def register_device(request: dict) -> tuple[dict, dict]:
+    raw = json.dumps(request["body"], ensure_ascii=False, separators=(",", ":")).encode()
+    content = encode_tt_encrypt(gzip.compress(raw, mtime=0))
+    target = request["url"] + "?" + urlencode(request["params"])
+    with urlopen(Request(target, data=content, headers=request["headers"]), timeout=20) as response:
+        body = json.loads(response.read())
+    did = body.get("device_id_str") or str(body.get("device_id") or "")
+    iid = body.get("install_id_str") or str(body.get("install_id") or "")
+    if not did or not iid or did == "0" or iid == "0":
+        raise RuntimeError("Registration did not return nonzero device and installation IDs")
+    return {"device_id": did, "install_id": iid}, body
+
+
+DEFAULT_IDENTITY = Path.home() / ".cache/vinput/doubaoime/credentials.json"
+LEGACY_IDENTITIES = (
+    Path.home() / ".cache/vinput/doubaoime-stable/identity.json",
+    Path.home() / ".cache/vinput/doubaoime-asr/credentials.json",
+)
+IDENTITY_FIELDS = ("device_id", "install_id", "cdid", "openudid", "clientudid")
+
+
+def save_identity(path: Path, state: dict):
+    descriptor, temporary = tempfile.mkstemp(prefix=path.name + ".", dir=path.parent)
     try:
-        with os.fdopen(fd, "w") as output:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
             json.dump(state, output)
             output.flush()
             os.fsync(output.fileno())
-        os.chmod(temporary, 0o600)
         os.replace(temporary, path)
-        os.chmod(path, 0o600)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
 
 
-def _ensure_identity(path):
+def migrated_identity():
+    for source in LEGACY_IDENTITIES:
+        try:
+            state = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(state, dict) or not all(state.get(key) and str(state[key]) != "0" for key in IDENTITY_FIELDS):
+            continue
+        result: dict = {key: str(state[key]) for key in IDENTITY_FIELDS}
+        installed = state.get("first_install_time")
+        if isinstance(installed, int) and installed > 0:
+            result["first_install_time"] = installed
+        return result
+    return None
+
+
+def _ensure_identity(path: Path) -> dict:
     path = Path(path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = path.with_suffix(path.suffix + ".lock")
-    with lock_path.open("a") as lock:
-        os.chmod(lock_path, 0o600)
-        import fcntl
-
+    with path.with_suffix(path.suffix + ".lock").open("a") as lock:
+        os.fchmod(lock.fileno(), 0o600)
         deadline = time.monotonic() + 30
         while True:
             try:
@@ -290,17 +318,27 @@ def _ensure_identity(path):
                 if time.monotonic() >= deadline:
                     raise TimeoutError("Identity lock deadline expired") from None
                 time.sleep(0.05)
-        state = json.loads(path.read_text()) if path.exists() else _new_installation()
+        if path.exists():
+            state = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            state = migrated_identity() if path == DEFAULT_IDENTITY else None
+            state = state if state is not None else new_installation()
         if not isinstance(state, dict):
             raise ValueError("Identity cache must be a JSON object")
-        if state.get("device_id") and state.get("install_id"):
-            if str(state["device_id"]) == "0" or str(state["install_id"]) == "0":
-                raise ValueError("Identity cache contains a zero identity")
+        if state.get("device_id") or state.get("install_id"):
+            if not all(state.get(key) and str(state[key]) != "0" for key in IDENTITY_FIELDS):
+                raise ValueError("Identity cache contains an incomplete or zero identity")
+            if not path.exists():
+                save_identity(path, state)
             path.chmod(0o600)
             return state
-        _save_identity(path, state)
-        state.update(_register(state))
-        _save_identity(path, state)
+        if not all(state.get(key) for key in ("cdid", "openudid", "clientudid", "first_install_time")):
+            raise ValueError("Identity cache contains an incomplete installation")
+        # Save the installation before registering so retries keep the same identity.
+        save_identity(path, state)
+        identifiers, _ = register_device(registration_request(state))
+        state.update(identifiers)
+        save_identity(path, state)
         return state
 
 
@@ -639,14 +677,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description="Doubao IME organization adapter")
     parser.add_argument("--identity", type=Path, default=Path(os.getenv("DOUBAOIME_IDENTITY_PATH") or DEFAULT_IDENTITY))
-    parser.add_argument("--port", type=int, default=int(os.getenv("DOUBAOIME_PORT") or "18232"))
     parser.add_argument(
         "--no-trailing-punctuation",
         action="store_true",
         default=os.getenv("DOUBAOIME_NO_TRAILING_PUNCTUATION", "").lower() in {"1", "true", "yes"},
     )
     args = parser.parse_args()
-    server = OrganizationServer(("127.0.0.1", args.port), Handler)
+    raw_port = os.getenv("DOUBAOIME_PORT", "").strip()
+    if not raw_port:
+        sys.stderr.write("[doubaoime-organize] Missing DOUBAOIME_PORT environment variable.\n")
+        return 2
+    try:
+        port = int(raw_port)
+        if not 1 <= port <= 65535:
+            raise ValueError
+    except ValueError:
+        sys.stderr.write("[doubaoime-organize] DOUBAOIME_PORT must be an integer between 1 and 65535.\n")
+        return 2
+    server = OrganizationServer(("127.0.0.1", port), Handler)
     server.identity = _ensure_identity(args.identity)
     server.no_trailing = args.no_trailing_punctuation
     server.crypto = CryptoCache()
@@ -655,4 +703,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
